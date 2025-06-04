@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>🎟️ USDT Raffle</title>
+  <script src="https://cdn.ethers.io/lib/ethers-5.2.umd.min.js"></script>
+  <style>
+    body {
+      background: #111;
+      color: gold;
+      font-family: monospace;
+      text-align: center;
+      padding: 40px;
+    }
+    h1 { font-size: 2.5em; }
+    button {
+      padding: 15px 30px;
+      margin: 10px;
+      font-size: 18px;
+      font-weight: bold;
+      background: gold;
+      color: black;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    #status { margin-top: 20px; font-size: 1.2em; color: lightgreen; }
+  </style>
+</head>
+
+<body>
+  <h1>🎟️ Win USDT Now!</h1>
+  <p>Pay 1 USDT per ticket. Each ticket increases your chances of winning!</p>
+
+  <div id="participantCount">Loading...</div>
+  <div id="yourTickets">🎫 Your Tickets: --</div>
+  <div id="jackpot">💰 Jackpot: -- USDT</div>
+
+  <button id="connect">🔗 Connect Wallet</button>
+  <br /><br />
+  <button id="buy" style="display:none;">🎯 Buy 1 Ticket</button>
+  <button id="buy5" style="display:none;">🔥 Buy 5 Tickets</button>
+  <button id="buy10" style="display:none;">💎 Buy 10 Tickets</button>
+  <button id="draw" style="display:none;">🏆 Draw Winner (Owner Only)</button>
+
+  <div id="status"></div>
+
+  <script>
+    const raffleAddress = "0xYourDeployedRaffleContract"; // ← استبدله بعنوان عقدك
+    const usdtAddress = "0xdAC17F958D2ee523a2206206994597C13D831ec7"; // USDT ERC-20 (Mainnet)
+    const raffleAbi = [
+      "function buyTicket() external",
+      "function getParticipants() external view returns (address[])",
+      "function drawWinner() external",
+      "function owner() external view returns (address)"
+    ];
+    const usdtAbi = [
+      "function approve(address spender, uint amount) external returns (bool)"
+    ];
+
+    let signer, provider, account;
+
+    document.getElementById("connect").onclick = async () => {
+      if (!window.ethereum) return alert("Install MetaMask");
+      provider = new ethers.providers.Web3Provider(window.ethereum);
+      await provider.send("eth_requestAccounts", []);
+      signer = provider.getSigner();
+      account = await signer.getAddress();
+      document.getElementById("status").innerText = `✅ Connected: ${account}`;
+      document.getElementById("buy").style.display = "inline-block";
+      document.getElementById("buy5").style.display = "inline-block";
+      document.getElementById("buy10").style.display = "inline-block";
+
+      const contract = new ethers.Contract(raffleAddress, raffleAbi, signer);
+      const ownerAddr = await contract.owner();
+      if (ownerAddr.toLowerCase() === account.toLowerCase()) {
+        document.getElementById("draw").style.display = "inline-block";
+      }
+
+      loadInfo();
+    };
+
+    async function loadInfo() {
+      const contract = new ethers.Contract(raffleAddress, raffleAbi, provider);
+      const participants = await contract.getParticipants();
+      document.getElementById("participantCount").innerText = `👥 Participants: ${participants.length}`;
+      document.getElementById("jackpot").innerText = `💰 Jackpot: ${(participants.length * 0.9).toFixed(2)} USDT`;
+
+      let count = 0;
+      participants.forEach(addr => {
+        if (addr.toLowerCase() === account.toLowerCase()) count++;
+      });
+      document.getElementById("yourTickets").innerText = `🎫 Your Tickets: ${count}`;
+    }
+
+    document.getElementById("buy").onclick = async () => {
+      await buyMultipleTickets(1);
+    };
+    document.getElementById("buy5").onclick = async () => {
+      await buyMultipleTickets(5);
+    };
+    document.getElementById("buy10").onclick = async () => {
+      await buyMultipleTickets(10);
+    };
+
+    async function buyMultipleTickets(count) {
+      const usdt = new ethers.Contract(usdtAddress, usdtAbi, signer);
+      const raffle = new ethers.Contract(raffleAddress, raffleAbi, signer);
+      const amount = ethers.utils.parseUnits((1 * count).toString(), 6);
+
+      try {
+        const approveTx = await usdt.approve(raffleAddress, amount);
+        await approveTx.wait();
+
+        for (let i = 0; i < count; i++) {
+          const tx = await raffle.buyTicket();
+          await tx.wait();
+        }
+
+        document.getElementById("status").innerText = `🎉 Bought ${count} ticket(s)!`;
+        loadInfo();
+      } catch (e) {
+        document.getElementById("status").innerText = "❌ Transaction failed.";
+      }
+    }
+
+    document.getElementById("draw").onclick = async () => {
+      const raffle = new ethers.Contract(raffleAddress, raffleAbi, signer);
+      try {
+        const tx = await raffle.drawWinner();
+        await tx.wait();
+        document.getElementById("status").innerText = "🏆 Winner selected!";
+        loadInfo();
+      } catch (e) {
+        document.getElementById("status").innerText = "❌ Draw failed.";
+      }
+    };
+  </script>
+</body>
+</html>
